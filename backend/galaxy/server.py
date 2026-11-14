@@ -52,9 +52,15 @@ def manifest():
     return json.loads(_data_file("manifest.json").read_text())
 
 
+LAYOUT_FILES = {"writes": "layout.bin", "reads": "layout_reads.bin"}
+
+
 @app.get("/api/layout")
-def layout():
-    return FileResponse(_data_file("layout.bin"), media_type="application/octet-stream")
+def layout(by: str = "writes"):
+    """Star positions. by=writes: UMAP of output weights; by=reads: of input weights."""
+    if by not in LAYOUT_FILES:
+        raise HTTPException(400, f"Unknown layout {by!r}. Use one of: {', '.join(LAYOUT_FILES)}")
+    return FileResponse(_data_file(LAYOUT_FILES[by]), media_type="application/octet-stream")
 
 
 def _clean_params(msg: dict) -> dict:

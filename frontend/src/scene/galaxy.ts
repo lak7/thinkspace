@@ -2,9 +2,10 @@ import * as THREE from "three";
 import type { Manifest } from "../protocol";
 import { DISC_RADIUS, layerY } from "./geometry";
 
-// Every star is one MLP neuron. Position comes from the precomputed UMAP of
-// the neuron's output weights; brightness is |activation| / layer scale for
-// the current token; colour is the activation's sign.
+// Every star is one MLP neuron. Position comes from a precomputed UMAP of the
+// neuron's weights: output weights ("writes", what it adds to the residual
+// stream) or input weights ("reads", what makes it fire). Brightness is
+// |activation| / layer scale for the current token; colour is its sign.
 const VERT = /* glsl */ `
   attribute float aLayer;
   attribute float aScale;
@@ -42,6 +43,8 @@ const FRAG = /* glsl */ `
   }
 `;
 
+export type LayoutKind = "writes" | "reads";
+
 export class Galaxy {
   readonly points: THREE.Points;
   readonly rings: THREE.LineLoop[] = [];
@@ -49,12 +52,18 @@ export class Galaxy {
   readonly dMlp: number;
   private readonly act: THREE.BufferAttribute;
   private readonly material: THREE.ShaderMaterial;
+  private readonly posAttr: THREE.BufferAttribute;
+  private readonly layouts = new Map<LayoutKind, Float32Array>();
+  private from: Float32Array;
+  private to: Float32Array;
 
   constructor(layout: Float32Array, manifest: Manifest) {
     this.nLayer = manifest.n_layer;
     this.dMlp = manifest.d_mlp;
     const n = this.nLayer * this.dMlp;
-    if (layout.length !== n * 2) throw new Error("layout.bin does not match the manifest");
+    this.checkLayout(layout);
+    this.layouts.set("writes", layout);
+    this.from = this.to = layout;
 
     const position = new Float32Array(n * 3);
     const layer = new Float32Array(n);
@@ -72,7 +81,9 @@ export class Galaxy {
     }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(position, 3));
+    this.posAttr = new THREE.BufferAttribute(position, 3);
+    this.posAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute("position", this.posAttr);
     geo.setAttribute("aLayer", new THREE.BufferAttribute(layer, 1));
     geo.setAttribute("aScale", new THREE.BufferAttribute(scale, 1));
     this.act = new THREE.BufferAttribute(new Float32Array(n), 1);
@@ -117,6 +128,47 @@ export class Galaxy {
       ring.position.y = layerY(l, this.nLayer);
       this.rings.push(ring);
     }
+  }
+
+  private checkLayout(layout: Float32Array): void {
+    if (layout.length !== this.nLayer * this.dMlp * 2) throw new Error("Star map does not match the manifest");
+  }
+
+  addLayout(kind: LayoutKind, layout: Float32Array): void {
+    this.checkLayout(layout);
+    this.layouts.set(kind, layout);
+  }
+
+  hasLayout(kind: LayoutKind): boolean {
+    return this.layouts.has(kind);
+  }
+
+  /** Start a morph from the positions currently drawn towards `kind`. Call morph(t) to advance. */
+  beginMorph(kind: LayoutKind): void {
+    const target = this.layouts.get(kind);
+    if (!target) throw new Error(`Layout ${kind} is not loaded`);
+    // Snapshot what is on screen, so a toggle mid-morph starts from where stars are.
+    const pos = this.posAttr.array as Float32Array;
+    const from = new Float32Array(target.length);
+    for (let k = 0; k < from.length / 2; k++) {
+      from[k * 2] = pos[k * 3] / DISC_RADIUS;
+      from[k * 2 + 1] = pos[k * 3 + 2] / DISC_RADIUS;
+    }
+    this.from = from;
+    this.to = target;
+  }
+
+  /** Place stars at fraction t (0..1, eased) of the way through the current morph. */
+  morph(t: number): void {
+    const e = t * t * (3 - 2 * t);
+    const pos = this.posAttr.array as Float32Array;
+    const a = this.from;
+    const b = this.to;
+    for (let k = 0; k < a.length / 2; k++) {
+      pos[k * 3] = (a[k * 2] + (b[k * 2] - a[k * 2]) * e) * DISC_RADIUS;
+      pos[k * 3 + 2] = (a[k * 2 + 1] + (b[k * 2 + 1] - a[k * 2 + 1]) * e) * DISC_RADIUS;
+    }
+    this.posAttr.needsUpdate = true;
   }
 
   /** Load one token's real activations (or clear with null). */

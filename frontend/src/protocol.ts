@@ -37,6 +37,8 @@ export interface Manifest {
   scales: number[];
   scale_rule: string;
   layout_rule: string;
+  /** Present when precompute wrote both star maps. */
+  layouts?: Record<string, { file: string; rule: string }>;
 }
 
 const EXP = new Float64Array(32);

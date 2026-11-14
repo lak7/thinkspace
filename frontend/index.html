@@ -48,6 +48,13 @@
       <h2>Residual stream norm <span class="quiet">embedding → layer 12</span></h2>
       <div id="resid"></div>
 
+      <h2>Arrange stars by</h2>
+      <div id="layout" class="chips">
+        <button class="chip" data-layout="writes" title="UMAP of each neuron's output weights: neurons that push the residual stream the same way sit together">What they write</button>
+        <button class="chip" data-layout="reads" title="UMAP of each neuron's input weights: neurons that fire on similar inputs sit together, so stars that light up together clump">What they read</button>
+      </div>
+      <div id="layout-caption" class="quiet layout-caption"></div>
+
       <h2>Attention layer</h2>
       <div id="layers" class="chips"></div>
 

@@ -4,7 +4,7 @@ import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { showToken, type Frame, type Manifest } from "./protocol";
 import { Player } from "./run";
 import { Beams, headColor } from "./scene/beams";
-import { Galaxy } from "./scene/galaxy";
+import { Galaxy, type LayoutKind } from "./scene/galaxy";
 import { pixelScale } from "./scene/geometry";
 import { Picker, type Hit } from "./scene/picking";
 import { Post } from "./scene/post";
@@ -15,13 +15,19 @@ import { Controls } from "./ui/controls";
 import { showHover } from "./ui/hover";
 
 const LABELLED_SOURCES = 5;
+const MORPH_SECONDS = 0.9;
+const LAYOUT_KEY = "galaxy.layout";
+
+async function fetchLayout(by: LayoutKind): Promise<Float32Array> {
+  const l = await fetch(`/api/layout?by=${by}`);
+  if (!l.ok) throw new Error((await l.json().catch(() => null))?.detail ?? `Server returned ${l.status}`);
+  return new Float32Array(await l.arrayBuffer());
+}
 
 async function loadLayout(): Promise<{ manifest: Manifest; layout: Float32Array }> {
   const m = await fetch("/api/manifest");
   if (!m.ok) throw new Error((await m.json().catch(() => null))?.detail ?? `Server returned ${m.status}`);
-  const l = await fetch("/api/layout");
-  if (!l.ok) throw new Error((await l.json().catch(() => null))?.detail ?? `Server returned ${l.status}`);
-  return { manifest: (await m.json()) as Manifest, layout: new Float32Array(await l.arrayBuffer()) };
+  return { manifest: (await m.json()) as Manifest, layout: await fetchLayout("writes") };
 }
 
 async function boot(): Promise<void> {
@@ -72,7 +78,10 @@ async function boot(): Promise<void> {
     beamThreshold: 0.05,
     starThreshold: 0,
     raw: false,
+    layout: "writes" as LayoutKind,
   };
+  const available = new Set<LayoutKind>(["writes"]);
+  let morphT = 1; // 1 = not morphing
 
   let dirty = true;
   let running = false;
@@ -221,8 +230,45 @@ async function boot(): Promise<void> {
       post.raw = on;
       dirty = true;
     },
+    layout(kind) {
+      if (kind === view.layout || !available.has(kind)) return;
+      view.layout = kind;
+      try {
+        localStorage.setItem(LAYOUT_KEY, kind);
+      } catch {
+        /* storage blocked: the choice just isn't remembered */
+      }
+      galaxy.beginMorph(kind);
+      // Raw mode shows only data-driven pixels, so jump instead of animating.
+      morphT = view.raw ? 1 : 0;
+      galaxy.morph(morphT);
+      ui.setLayout(kind, available);
+      dirty = true;
+    },
     reconnect: () => socket.connect(),
   });
+  ui.setLayout(view.layout, available);
+
+  // The "reads" map is optional (older precomputes lack it), so load it after first paint.
+  void fetchLayout("reads")
+    .then((reads) => {
+      galaxy.addLayout("reads", reads);
+      available.add("reads");
+      let saved: string | null = null;
+      try {
+        saved = localStorage.getItem(LAYOUT_KEY);
+      } catch {
+        /* ignore */
+      }
+      if (saved === "reads") {
+        view.layout = "reads";
+        galaxy.beginMorph("reads");
+        galaxy.morph(1);
+        dirty = true;
+      }
+      ui.setLayout(view.layout, available);
+    })
+    .catch(() => ui.setLayout(view.layout, available));
 
   // ---- Applying the cursor to the scene ----------------------------------
   /** Layer cursor as drawn: raw mode snaps to whole layers (no fade-in). */
@@ -270,7 +316,10 @@ async function boot(): Promise<void> {
     const frame = player.frame;
     const tokText = (i: number) => `#${i + 1} “${showToken(player.frames[i]?.h.token ?? "")}”`;
     if (hit.kind === "star") {
-      const rows = [{ label: "Neuron", value: `${hit.neuron} of ${galaxy.dMlp}` }];
+      const rows = [
+        { label: "Neuron", value: `${hit.neuron} of ${galaxy.dMlp}` },
+        { label: "Placed by", value: view.layout === "reads" ? "input weights" : "output weights" },
+      ];
       if (frame) {
         const act = galaxy.activation(hit.layer, hit.neuron);
         const scale = manifest.scales[hit.layer];
@@ -340,7 +389,13 @@ async function boot(): Promise<void> {
   function tick(now: number): void {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const changed = player.tick(dt) || dirty;
+    let moved = false;
+    if (morphT < 1) {
+      morphT = Math.min(morphT + dt / MORPH_SECONDS, 1);
+      galaxy.morph(morphT);
+      moved = true;
+    }
+    const changed = player.tick(dt) || dirty || moved;
     if (changed) {
       apply();
       dirty = false;

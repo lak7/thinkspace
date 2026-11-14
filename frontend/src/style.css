@@ -136,6 +136,7 @@ summary { cursor: pointer; color: var(--quiet); }
   text-align: center;
 }
 .chip.on { background: rgba(255, 189, 92, 0.2); border-color: var(--accent); color: var(--accent); }
+.layout-caption { margin-top: 4px; font-size: 12px; }
 .chip.head { border-color: var(--head); color: var(--head); opacity: 0.35; }
 .chip.head.on { opacity: 1; background: color-mix(in srgb, var(--head) 22%, transparent); }
 

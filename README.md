@@ -10,7 +10,7 @@ See `prd.md` for the full product spec.
 Requires `uv`, Node 20+ and `pnpm`.
 
 ```sh
-make setup   # once: installs deps, computes the star map (~2 min), builds the UI
+make setup   # once: installs deps, computes the star maps (~4 min), builds the UI
 make start   # then open http://127.0.0.1:8000
 ```
 
@@ -20,7 +20,7 @@ Type a prompt and press **Run** (or Cmd/Ctrl+Enter).
 
 | On screen | Real source |
 |---|---|
-| Star position | UMAP of the neuron's output weights (`mlp.c_proj.weight` row), per layer |
+| Star position | UMAP per layer of either the neuron's output weights (`mlp.c_proj.weight` row: *what it writes*) or its input weights (`mlp.c_fc.weight` column × `ln_2` gain: *what it reads*). Toggle with **Arrange stars by** |
 | Star brightness | abs(post-GELU activation) / layer scale, for the current token |
 | Star colour | Sign of the activation: gold positive, blue negative |
 | Beam | Attention weight from the current token to an earlier one; colour = head, intensity = weight |
@@ -41,6 +41,10 @@ pixels. Hover any star, beam or token for its exact value.
 - Click a token in the strip or on the ring to jump to it
 - **Attention layer**: *Follow* shows the layer currently lighting up; a number pins one layer
 - **Heads**: toggle which of the 12 heads draw beams
+- **Arrange stars by**: *What they write* groups neurons by the direction they
+  push the residual stream; *What they read* groups them by what makes them
+  fire. Brightness is driven by what a neuron reads, so in the *read* layout
+  neurons that fire together sit together and light up as visible clumps
 
 ## How it stays honest
 

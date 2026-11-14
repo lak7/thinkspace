@@ -72,7 +72,7 @@ Model facts for GPT-2 small: 12 layers, 12 heads per layer, hidden size 768, 3,0
 | Visual element | Real source | Shape per generated token |
 |---|---|---|
 | Star (one per MLP neuron) | Post-GELU activation in each block's MLP | 12 × 3,072 |
-| Star position | UMAP of each neuron's output weight vector (its row in the MLP output projection) | Precomputed once |
+| Star position | UMAP of each neuron's output weight vector (its row in the MLP output projection), or, toggleable, of its input weight vector (its column in the MLP input projection, with the LayerNorm gain folded in) | Precomputed once |
 | Star brightness | Absolute activation, scaled per layer | — |
 | Star colour | Sign of activation (GELU outputs can be slightly negative) | — |
 | Token stars | The prompt and generated tokens, laid out in a row | — |

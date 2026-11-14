@@ -1,4 +1,10 @@
 import { showToken } from "../protocol";
+import type { LayoutKind } from "../scene/galaxy";
+
+const LAYOUT_CAPTIONS: Record<LayoutKind, string> = {
+  writes: "Neighbours push the model's running state the same way.",
+  reads: "Neighbours fire on similar inputs, so lit stars clump.",
+};
 
 function el<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -28,6 +34,7 @@ export interface ControlHandlers {
   beamThreshold(v: number): void;
   starThreshold(v: number): void;
   raw(on: boolean): void;
+  layout(kind: LayoutKind): void;
   reconnect(): void;
 }
 
@@ -46,6 +53,8 @@ export class Controls {
   private readonly banner = el<HTMLDivElement>("banner");
   private readonly layerChips: HTMLButtonElement[] = [];
   private readonly headChips: HTMLButtonElement[] = [];
+  private readonly layoutChips = [...el("layout").querySelectorAll<HTMLButtonElement>("button")];
+  private readonly layoutCaption = el<HTMLDivElement>("layout-caption");
   private readonly heads = new Set<number>();
   private stripCurrent = -1;
 
@@ -83,6 +92,7 @@ export class Controls {
     this.bindSlider("star-thr", "star-thr-out", (v) => `${v.toFixed(2)}× scale`, on.starThreshold);
     const raw = el<HTMLInputElement>("raw");
     raw.onchange = () => on.raw(raw.checked);
+    for (const b of this.layoutChips) b.onclick = () => on.layout(b.dataset.layout as LayoutKind);
 
     // Layer chips: Follow, then 1..nLayer.
     const layers = el("layers");
@@ -149,6 +159,18 @@ export class Controls {
     };
     input.oninput = update;
     out.textContent = fmt(Number(input.value));
+  }
+
+  /** Highlight the active star map; `available` lists maps the server has. */
+  setLayout(kind: LayoutKind, available: Set<LayoutKind>): void {
+    for (const b of this.layoutChips) {
+      const k = b.dataset.layout as LayoutKind;
+      b.classList.toggle("on", k === kind);
+      b.setAttribute("aria-pressed", String(k === kind));
+      b.disabled = !available.has(k);
+      if (b.disabled) b.title = "Not computed yet. Run: make precompute";
+    }
+    this.layoutCaption.textContent = LAYOUT_CAPTIONS[kind];
   }
 
   private setLayer(layer: number): void {

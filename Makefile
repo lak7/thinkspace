@@ -7,7 +7,7 @@ setup:
 	$(MAKE) precompute
 	$(MAKE) build
 
-# Star positions (UMAP of real neuron weights) and brightness scales. ~2 minutes.
+# Star positions (UMAP of real neuron input and output weights) and brightness scales. ~4 minutes.
 precompute:
 	cd backend && uv run python -m galaxy.precompute
 
