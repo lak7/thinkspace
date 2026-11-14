@@ -1,0 +1,29 @@
+The harbour was quiet when the first boats came back. Gulls circled over the nets, and an old man on the quay counted crates of mackerel without looking up. His granddaughter asked why the sea was grey in the morning and green by noon. He said the water only borrows its colour from the sky, and she wrote that down in a small red notebook.
+
+"Are you coming to the meeting on Thursday?" asked Priya.
+"I can't. I have a dentist appointment at three, and after that I promised to help my brother move a sofa."
+"Then send me your notes tonight. We need the budget numbers before the call with Berlin."
+"Fine, but they are rough. Travel is 4,200, software is 1,850, and I still don't know what the venue costs."
+
+Water boils at 100 degrees Celsius at sea level and at a lower temperature on a mountain, because the air pressure is lower. The Earth takes about 365.25 days to go around the Sun, which is why a leap day is added every four years. Light from the Sun reaches us in a little over eight minutes. The human heart beats roughly 100,000 times a day. Paris is the capital of France, Tokyo is the capital of Japan, and Nairobi is the capital of Kenya.
+
+def average(values):
+    if not values:
+        return 0.0
+    total = 0
+    for v in values:
+        total += v
+    return total / len(values)
+
+for i in range(10):
+    print(i, average([i, i + 1, i + 2]))
+
+To make the soup, chop two onions and three carrots. Heat a spoon of oil in a deep pan, add the onions, and stir until they are soft. Add the carrots, a litre of stock, a pinch of salt and a bay leaf. Simmer for twenty minutes, then blend until smooth. Serve with bread.
+
+In 1969 two astronauts walked on the Moon while a third stayed in orbit. The printing press spread through Europe in the fifteenth century and made books far cheaper. The first transatlantic telegraph cable was laid in 1858, and it failed after a few weeks. Rome was not built in a day, and neither was the railway that later crossed the Alps.
+
+SHIPPING UPDATE: Your order #58213 has left the warehouse and should arrive between Monday and Wednesday. If nobody is home, the courier will leave a card. Reply STOP to end these messages. Questions? Email support or call 0800 555 0199 between 9 am and 5 pm.
+
+She had never liked the house. It was too large, the stairs creaked, and the windows faced north. But when the letter came saying it was hers, she felt something she had not expected: a kind of stubborn tenderness, as if the house had been waiting for her and would be hurt if she refused. So she packed one suitcase, locked her flat, and took the slow train.
+
+The quick brown fox jumps over the lazy dog. One, two, three, four, five, six, seven, eight, nine, ten. Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday. If x equals 3 and y equals 4, then x squared plus y squared equals 25. Why did the chicken cross the road? To get to the other side. What is the meaning of this? I have no idea, but I would like to find out.

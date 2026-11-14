@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLM Galaxy</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="labels"></div>
+
+    <header id="top">
+      <h1>LLM Galaxy</h1>
+      <span id="status" class="pill">Starting…</span>
+      <span id="fps" class="pill quiet" title="Render frame rate">– fps</span>
+    </header>
+
+    <section id="left" class="panel">
+      <label class="field-label" for="prompt">Prompt</label>
+      <textarea id="prompt" rows="3" spellcheck="false">The capital of France is</textarea>
+      <div class="row">
+        <button id="run" class="primary" disabled>Run</button>
+        <button id="stop" disabled>Stop</button>
+        <span id="run-info" class="quiet"></span>
+      </div>
+      <details>
+        <summary>Sampling</summary>
+        <div class="grid">
+          <label>New tokens <input id="max-new" type="number" min="0" max="256" value="30" /></label>
+          <label>Temperature <input id="temperature" type="number" min="0" max="5" step="0.1" value="0.8" /></label>
+          <label>Top-k <input id="top-k" type="number" min="0" max="1000" value="40" /></label>
+          <label>Seed <input id="seed" type="number" min="0" value="0" /></label>
+        </div>
+      </details>
+      <p class="note">
+        Each star is one real MLP neuron in GPT-2 small; each beam is one real attention weight.
+        Hover anything to see its value. Single neurons rarely have a clean meaning, so read
+        patterns, not individual stars.
+      </p>
+    </section>
+
+    <section id="right" class="panel">
+      <h2>Next token</h2>
+      <div id="candidates-caption" class="quiet"></div>
+      <div id="candidates"></div>
+
+      <h2>Residual stream norm <span class="quiet">embedding → layer 12</span></h2>
+      <div id="resid"></div>
+
+      <h2>Attention layer</h2>
+      <div id="layers" class="chips"></div>
+
+      <h2>Heads <button id="heads-all" class="link">all</button> <button id="heads-none" class="link">none</button></h2>
+      <div id="heads" class="chips"></div>
+
+      <label class="slider">Hide beams below <output id="beam-thr-out"></output>
+        <input id="beam-thr" type="range" min="0.01" max="0.5" step="0.01" value="0.05" />
+      </label>
+      <label class="slider">Hide stars below <output id="star-thr-out"></output>
+        <input id="star-thr" type="range" min="0" max="2" step="0.05" value="0" />
+      </label>
+      <label class="check" title="Turns off bloom and fades, leaving only pixels driven by model values">
+        <input id="raw" type="checkbox" /> Raw mode (no bloom, no fades)
+      </label>
+    </section>
+
+    <footer id="bottom" class="panel">
+      <div class="transport">
+        <button id="tok-prev" title="Previous token (←)">⏮</button>
+        <button id="layer-prev" title="Previous layer (↓)">◀</button>
+        <button id="play" class="primary" title="Play or pause (Space)">▶</button>
+        <button id="layer-next" title="Next layer (↑)">▶|</button>
+        <button id="tok-next" title="Next token (→)">⏭</button>
+        <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Token position" />
+        <span id="readout" class="mono quiet">no run yet</span>
+        <label class="speed">Speed
+          <input id="speed" type="range" min="1" max="60" step="1" value="8" />
+          <output id="speed-out"></output>
+        </label>
+      </div>
+      <div id="strip" class="mono"></div>
+    </footer>
+
+    <div id="hover" hidden></div>
+    <div id="banner" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
