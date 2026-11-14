@@ -3,7 +3,8 @@
     uint32 LE   header length in bytes (N)
     N bytes     UTF-8 JSON header
     0-3 bytes   zero padding so the payload starts on a 4-byte boundary
-    float16 LE  MLP activations, n_layer * d_mlp values, layer-major
+    float16 LE  MLP activations (post-GELU), n_layer * d_mlp values, layer-major
+    float16 LE  MLP pre-activations (pre-GELU), n_layer * d_mlp values, layer-major
     float16 LE  attention weights, n_layer * n_head * seq_len values
 """
 
@@ -16,7 +17,7 @@ import numpy as np
 
 from .capture import Frame
 
-VERSION = 1
+VERSION = 2
 
 
 def encode_frame(frame: Frame) -> bytes:
@@ -43,13 +44,14 @@ def encode_frame(frame: Frame) -> bytes:
             hb,
             b"\0" * pad,
             frame.mlp.astype("<f2").tobytes(),
+            frame.pre.astype("<f2").tobytes(),
             frame.attn.astype("<f2").tobytes(),
         ]
     )
 
 
-def decode_frame(data: bytes) -> tuple[dict, np.ndarray, np.ndarray]:
-    """Inverse of encode_frame. Returns (header, mlp, attn) with float16 arrays."""
+def decode_frame(data: bytes) -> tuple[dict, np.ndarray, np.ndarray, np.ndarray]:
+    """Inverse of encode_frame. Returns (header, mlp, pre, attn) with float16 arrays."""
     (hlen,) = struct.unpack_from("<I", data, 0)
     header = json.loads(data[4 : 4 + hlen].decode("utf-8"))
     off = 4 + hlen
@@ -59,9 +61,13 @@ def decode_frame(data: bytes) -> tuple[dict, np.ndarray, np.ndarray]:
         header["n_layer"], header["d_mlp"]
     )
     off += n_mlp * 2
+    pre = np.frombuffer(data, dtype="<f2", count=n_mlp, offset=off).reshape(
+        header["n_layer"], header["d_mlp"]
+    )
+    off += n_mlp * 2
     n_attn = header["n_layer"] * header["n_head"] * header["seq_len"]
     attn = np.frombuffer(data, dtype="<f2", count=n_attn, offset=off).reshape(
         header["n_layer"], header["n_head"], header["seq_len"]
     )
     assert off + n_attn * 2 == len(data), "trailing bytes in frame"
-    return header, mlp, attn
+    return header, mlp, pre, attn

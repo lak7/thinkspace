@@ -1,9 +1,13 @@
 """Read real internal values out of a GPT-2 forward pass.
 
-Three things are captured, all for the positions processed in the call:
+Four things are captured, all for the positions processed in the call:
 
 - MLP activations: the input to each block's ``mlp.c_proj``, which is exactly
-  the post-GELU hidden activation (3,072 values per layer).
+  the post-GELU hidden activation (3,072 values per layer). GELU bottoms out
+  near -0.17, so these are never strongly negative.
+- MLP pre-activations: the output of each block's ``mlp.c_fc``, the score
+  before GELU. Unlike the activation it can be strongly negative, which is
+  how a neuron that is pushed hard *off* differs from one that is just idle.
 - Attention weights: returned by the model itself (``output_attentions``).
 - Residual stream: the embedding output and the output of every block,
   before the final layer norm.
@@ -22,6 +26,7 @@ class Step:
     """Raw tensors from one forward call over ``T_new`` positions."""
 
     mlp: torch.Tensor  # (n_layer, T_new, d_mlp)
+    pre: torch.Tensor  # (n_layer, T_new, d_mlp)  before GELU
     attn: torch.Tensor  # (n_layer, n_head, T_new, T_total)
     resid: torch.Tensor  # (n_layer + 1, T_new)  L2 norms
     logits: torch.Tensor  # (T_new, vocab)
@@ -37,6 +42,7 @@ class Frame:
     token: str
     is_prompt: bool
     mlp: np.ndarray  # (n_layer, d_mlp) float32
+    pre: np.ndarray  # (n_layer, d_mlp) float32, before GELU
     attn: np.ndarray  # (n_layer, n_head, pos + 1) float32
     resid: np.ndarray  # (n_layer + 1,) float32
     top: list[tuple[int, str, float]]  # next-token candidates at temperature 1
@@ -47,17 +53,25 @@ class Capture:
         self.model = model
         self.n_layer = model.config.n_layer
         self._mlp: list[torch.Tensor | None] = [None] * self.n_layer
+        self._pre: list[torch.Tensor | None] = [None] * self.n_layer
         self._block_out: list[torch.Tensor | None] = [None] * self.n_layer
         self._handles = []
         for i, block in enumerate(model.transformer.h):
             self._handles.append(
                 block.mlp.c_proj.register_forward_pre_hook(self._mlp_hook(i))
             )
+            self._handles.append(block.mlp.c_fc.register_forward_hook(self._pre_hook(i)))
             self._handles.append(block.register_forward_hook(self._block_hook(i)))
 
     def _mlp_hook(self, i: int):
         def hook(_module, args):
             self._mlp[i] = args[0].detach()
+
+        return hook
+
+    def _pre_hook(self, i: int):
+        def hook(_module, _args, output):
+            self._pre[i] = output.detach()
 
         return hook
 
@@ -83,11 +97,13 @@ class Capture:
             output_hidden_states=True,
         )
         mlp = torch.stack([m[0] for m in self._mlp])
+        pre = torch.stack([m[0] for m in self._pre])
         attn = torch.stack([a[0] for a in out.attentions])
         embed = out.hidden_states[0][0]
         resid = torch.stack([embed] + [b[0] for b in self._block_out]).norm(dim=-1)
         return Step(
             mlp=mlp.float().cpu(),
+            pre=pre.float().cpu(),
             attn=attn.float().cpu(),
             resid=resid.float().cpu(),
             logits=out.logits[0].float().cpu(),
@@ -108,6 +124,7 @@ def make_frame(
         token=tokenizer.decode([token_id]),
         is_prompt=is_prompt,
         mlp=step.mlp[:, t].numpy().copy(),
+        pre=step.pre[:, t].numpy().copy(),
         attn=step.attn[:, :, t, : pos + 1].numpy().copy(),
         resid=step.resid[:, t].numpy().copy(),
         top=top,

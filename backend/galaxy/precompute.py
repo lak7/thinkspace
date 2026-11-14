@@ -12,14 +12,17 @@ per neuron (3,072 neurons).
   fire on similar inputs land near each other, so co-firing stars clump.
 
 Scales: the 99th percentile of |activation| per layer over a calibration
-text, so brightness is comparable across tokens and prompts.
+text, so brightness is comparable across tokens and prompts. The same is
+done for the pre-GELU score (``pre_scales``).
 
 Run with:  uv run python -m galaxy.precompute
+Scales only (keeps the star maps):  uv run python -m galaxy.precompute --scales-only
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -75,15 +78,22 @@ LAYOUTS = {
 }
 
 
-def calibrate(capture: Capture, tokenizer, chunk: int = 256) -> list[float]:
+def calibrate(capture: Capture, tokenizer, chunk: int = 256) -> tuple[list[float], list[float]]:
+    """p99 of |post-GELU activation| and of |pre-GELU score|, per layer."""
     ids = tokenizer(CALIBRATION.read_text(), return_tensors="pt").input_ids[0]
     device = next(capture.model.parameters()).device
-    per_layer: list[list[np.ndarray]] = [[] for _ in range(capture.n_layer)]
+    post: list[list[np.ndarray]] = [[] for _ in range(capture.n_layer)]
+    pre: list[list[np.ndarray]] = [[] for _ in range(capture.n_layer)]
     for start in range(0, len(ids), chunk):
         step = capture.forward(ids[start : start + chunk].unsqueeze(0).to(device))
         for layer in range(capture.n_layer):
-            per_layer[layer].append(step.mlp[layer].abs().flatten().numpy())
-    return [float(np.percentile(np.concatenate(v), 99)) for v in per_layer]
+            post[layer].append(step.mlp[layer].abs().flatten().numpy())
+            pre[layer].append(step.pre[layer].abs().flatten().numpy())
+
+    def p99(v: list[list[np.ndarray]]) -> list[float]:
+        return [float(np.percentile(np.concatenate(x), 99)) for x in v]
+
+    return p99(post), p99(pre)
 
 
 def main() -> None:
@@ -92,8 +102,14 @@ def main() -> None:
     cfg = model.config
     d_mlp = model.transformer.h[0].mlp.c_proj.weight.shape[0]
 
+    scales_only = "--scales-only" in sys.argv[1:]
     layouts = {}
     for name, (filename, vectors, rule) in LAYOUTS.items():
+        if scales_only:
+            if not (DATA_DIR / filename).exists():
+                sys.exit(f"{filename} is missing; run without --scales-only first")
+            layouts[name] = {"file": filename, "rule": rule}
+            continue
         layout = np.zeros((cfg.n_layer, d_mlp, 2), dtype=np.float32)
         for layer, block in enumerate(model.transformer.h):
             w = vectors(block)
@@ -105,9 +121,10 @@ def main() -> None:
         layouts[name] = {"file": filename, "rule": rule}
 
     capture = Capture(model)
-    scales = calibrate(capture, tokenizer)
+    scales, pre_scales = calibrate(capture, tokenizer)
     capture.close()
     print("scales:", [round(s, 3) for s in scales])
+    print("pre_scales:", [round(s, 3) for s in pre_scales])
 
     manifest = {
         "model": MODEL_NAME,
@@ -117,6 +134,8 @@ def main() -> None:
         "d_mlp": d_mlp,
         "scales": scales,
         "scale_rule": "99th percentile of |activation| per layer over calibration.txt",
+        "pre_scales": pre_scales,
+        "pre_scale_rule": "99th percentile of |pre-GELU score| per layer over calibration.txt",
         "layout_rule": LAYOUTS["writes"][2],
         "layouts": layouts,
         "layout_seed": SEED,

@@ -5,7 +5,9 @@ import { DISC_RADIUS, layerY } from "./geometry";
 // Every star is one MLP neuron. Position comes from a precomputed UMAP of the
 // neuron's weights: output weights ("writes", what it adds to the residual
 // stream) or input weights ("reads", what makes it fire). Brightness is
-// |activation| / layer scale for the current token; colour is its sign.
+// |value| / layer scale for the current token; colour is its sign. The value
+// is the post-GELU activation (what the neuron passes on, never below about
+// -0.17) or the pre-GELU score (how hard the input pushed it on or off).
 const VERT = /* glsl */ `
   attribute float aLayer;
   attribute float aScale;
@@ -44,6 +46,7 @@ const FRAG = /* glsl */ `
 `;
 
 export type LayoutKind = "writes" | "reads";
+export type ValueKind = "post" | "pre";
 
 export class Galaxy {
   readonly points: THREE.Points;
@@ -53,6 +56,11 @@ export class Galaxy {
   private readonly act: THREE.BufferAttribute;
   private readonly material: THREE.ShaderMaterial;
   private readonly posAttr: THREE.BufferAttribute;
+  private readonly scaleAttr: THREE.BufferAttribute;
+  private readonly manifest: Manifest;
+  private post: Float32Array | null = null;
+  private pre: Float32Array | null = null;
+  value: ValueKind = "post";
   private readonly layouts = new Map<LayoutKind, Float32Array>();
   private from: Float32Array;
   private to: Float32Array;
@@ -60,6 +68,7 @@ export class Galaxy {
   constructor(layout: Float32Array, manifest: Manifest) {
     this.nLayer = manifest.n_layer;
     this.dMlp = manifest.d_mlp;
+    this.manifest = manifest;
     const n = this.nLayer * this.dMlp;
     this.checkLayout(layout);
     this.layouts.set("writes", layout);
@@ -85,7 +94,8 @@ export class Galaxy {
     this.posAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute("position", this.posAttr);
     geo.setAttribute("aLayer", new THREE.BufferAttribute(layer, 1));
-    geo.setAttribute("aScale", new THREE.BufferAttribute(scale, 1));
+    this.scaleAttr = new THREE.BufferAttribute(scale, 1);
+    geo.setAttribute("aScale", this.scaleAttr);
     this.act = new THREE.BufferAttribute(new Float32Array(n), 1);
     this.act.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute("aAct", this.act);
@@ -171,16 +181,43 @@ export class Galaxy {
     this.posAttr.needsUpdate = true;
   }
 
-  /** Load one token's real activations (or clear with null). */
-  setActivations(mlp: Float32Array | null): void {
+  /** Load one token's real values (or clear with nulls). */
+  setActivations(post: Float32Array | null, pre: Float32Array | null): void {
+    this.post = post;
+    this.pre = pre;
+    this.upload();
+  }
+
+  /** Which value drives brightness and colour. */
+  setValue(kind: ValueKind): void {
+    this.value = kind;
+    const scales = this.scales(kind);
+    const arr = this.scaleAttr.array as Float32Array;
+    for (let l = 0; l < this.nLayer; l++) arr.fill(scales[l], l * this.dMlp, (l + 1) * this.dMlp);
+    this.scaleAttr.needsUpdate = true;
+    this.upload();
+  }
+
+  scales(kind: ValueKind = this.value): number[] {
+    return kind === "pre" && this.manifest.pre_scales ? this.manifest.pre_scales : this.manifest.scales;
+  }
+
+  private upload(): void {
+    const src = this.value === "pre" ? this.pre : this.post;
     const arr = this.act.array as Float32Array;
-    if (mlp) arr.set(mlp);
+    if (src) arr.set(src);
     else arr.fill(0);
     this.act.needsUpdate = true;
   }
 
+  /** Post-GELU activation of one neuron for the loaded token (0 if none). */
   activation(layer: number, neuron: number): number {
-    return (this.act.array as Float32Array)[layer * this.dMlp + neuron];
+    return this.post?.[layer * this.dMlp + neuron] ?? 0;
+  }
+
+  /** Pre-GELU score of one neuron for the loaded token (0 if none). */
+  preActivation(layer: number, neuron: number): number {
+    return this.pre?.[layer * this.dMlp + neuron] ?? 0;
   }
 
   setCursor(layerCursor: number): void {

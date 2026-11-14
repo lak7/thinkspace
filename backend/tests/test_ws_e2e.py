@@ -41,13 +41,16 @@ def test_stream_matches_fresh_forward_pass():
         assert final["frames"] == len(frames) == 4 + 10
 
         model = server.state["capture"].model
-        ids = torch.tensor([[h["token_id"] for h, _, _ in frames]])
-        mlp, attn, _, _ = reference_pass(model, ids)
-        for header, f_mlp, f_attn in frames:
+        ids = torch.tensor([[h["token_id"] for h, *_ in frames]])
+        mlp, attn, _, _, pre = reference_pass(model, ids)
+        for header, f_mlp, f_pre, f_attn in frames:
             pos = header["pos"]
             # float16 keeps about 3 significant digits.
             np.testing.assert_allclose(
                 f_mlp.astype(np.float32), mlp[:, pos].numpy(), atol=3e-3, rtol=2e-3
+            )
+            np.testing.assert_allclose(
+                f_pre.astype(np.float32), pre[:, pos].numpy(), atol=1e-2, rtol=2e-3
             )
             np.testing.assert_allclose(
                 f_attn.astype(np.float32), attn[:, :, pos, : pos + 1].numpy(), atol=1e-3

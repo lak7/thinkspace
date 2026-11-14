@@ -1,9 +1,14 @@
 import { showToken } from "../protocol";
-import type { LayoutKind } from "../scene/galaxy";
+import type { LayoutKind, ValueKind } from "../scene/galaxy";
 
 const LAYOUT_CAPTIONS: Record<LayoutKind, string> = {
   writes: "Neighbours push the model's running state the same way.",
   reads: "Neighbours fire on similar inputs, so lit stars clump.",
+};
+
+const VALUE_CAPTIONS: Record<ValueKind, string> = {
+  post: "Gold = firing. Blue is only ever faint: GELU can't go below −0.17, so “pushed hard off” looks dark.",
+  pre: "Gold = input pushes it on, blue = pushes it off. Bright blue is a neuron being actively suppressed.",
 };
 
 function el<T extends HTMLElement>(id: string): T {
@@ -35,6 +40,7 @@ export interface ControlHandlers {
   starThreshold(v: number): void;
   raw(on: boolean): void;
   layout(kind: LayoutKind): void;
+  value(kind: ValueKind): void;
   reconnect(): void;
 }
 
@@ -55,6 +61,8 @@ export class Controls {
   private readonly headChips: HTMLButtonElement[] = [];
   private readonly layoutChips = [...el("layout").querySelectorAll<HTMLButtonElement>("button")];
   private readonly layoutCaption = el<HTMLDivElement>("layout-caption");
+  private readonly valueChips = [...el("value").querySelectorAll<HTMLButtonElement>("button")];
+  private readonly valueCaption = el<HTMLDivElement>("value-caption");
   private readonly heads = new Set<number>();
   private stripCurrent = -1;
 
@@ -93,6 +101,7 @@ export class Controls {
     const raw = el<HTMLInputElement>("raw");
     raw.onchange = () => on.raw(raw.checked);
     for (const b of this.layoutChips) b.onclick = () => on.layout(b.dataset.layout as LayoutKind);
+    for (const b of this.valueChips) b.onclick = () => on.value(b.dataset.value as ValueKind);
 
     // Layer chips: Follow, then 1..nLayer.
     const layers = el("layers");
@@ -171,6 +180,19 @@ export class Controls {
       if (b.disabled) b.title = "Not computed yet. Run: make precompute";
     }
     this.layoutCaption.textContent = LAYOUT_CAPTIONS[kind];
+  }
+
+  setValue(kind: ValueKind, preAvailable: boolean): void {
+    for (const b of this.valueChips) {
+      const k = b.dataset.value as ValueKind;
+      b.classList.toggle("on", k === kind);
+      b.setAttribute("aria-pressed", String(k === kind));
+      if (k === "pre" && !preAvailable) {
+        b.disabled = true;
+        b.title = "Needs pre-GELU scales. Run: make precompute";
+      }
+    }
+    this.valueCaption.textContent = VALUE_CAPTIONS[kind];
   }
 
   private setLayer(layer: number): void {

@@ -35,19 +35,35 @@ def test_shapes_and_order(run, model_and_tokenizer):
         assert f.pos == i
         assert f.is_prompt == (i < n_prompt)
         assert f.mlp.shape == (12, 3072)
+        assert f.pre.shape == (12, 3072)
         assert f.attn.shape == (12, 12, i + 1)
         assert f.resid.shape == (13,)
         assert len(f.top) == 10
 
 
 def test_mlp_matches_reference(run):
-    frames, (mlp, _, _, _) = run
+    frames, (mlp, *_) = run
     for f in frames:
         np.testing.assert_allclose(f.mlp, mlp[:, f.pos].numpy(), atol=2e-3, rtol=1e-3)
 
 
+def test_pre_activation_matches_reference(run):
+    frames, (*_, pre) = run
+    for f in frames:
+        np.testing.assert_allclose(f.pre, pre[:, f.pos].numpy(), atol=2e-3, rtol=1e-3)
+
+
+def test_activation_is_gelu_of_pre_activation(run):
+    """Ties the two together, and pins the claim that GELU never goes below about -0.17."""
+    frames, _ = run
+    for f in frames:
+        gelu = torch.nn.functional.gelu(torch.from_numpy(f.pre), approximate="tanh").numpy()
+        np.testing.assert_allclose(f.mlp, gelu, atol=2e-3, rtol=1e-3)
+        assert f.mlp.min() > -0.171
+
+
 def test_attention_matches_reference(run):
-    frames, (_, attn, _, _) = run
+    frames, (_, attn, *_) = run
     for f in frames:
         ref = attn[:, :, f.pos, : f.pos + 1].numpy()
         np.testing.assert_allclose(f.attn, ref, atol=1e-4)
@@ -55,13 +71,13 @@ def test_attention_matches_reference(run):
 
 
 def test_residual_matches_reference(run):
-    frames, (_, _, resid, _) = run
+    frames, (_, _, resid, *_) = run
     for f in frames:
         np.testing.assert_allclose(f.resid[:12], resid[:, f.pos].numpy(), rtol=1e-3)
 
 
 def test_candidates_match_reference(run):
-    frames, (_, _, _, logits) = run
+    frames, (_, _, _, logits, _) = run
     for f in frames:
         probs = torch.softmax(logits[f.pos], -1)
         p, idx = probs.topk(10)

@@ -4,7 +4,7 @@ import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { showToken, type Frame, type Manifest } from "./protocol";
 import { Player } from "./run";
 import { Beams, headColor } from "./scene/beams";
-import { Galaxy, type LayoutKind } from "./scene/galaxy";
+import { Galaxy, type LayoutKind, type ValueKind } from "./scene/galaxy";
 import { pixelScale } from "./scene/geometry";
 import { Picker, type Hit } from "./scene/picking";
 import { Post } from "./scene/post";
@@ -17,6 +17,23 @@ import { showHover } from "./ui/hover";
 const LABELLED_SOURCES = 5;
 const MORPH_SECONDS = 0.9;
 const LAYOUT_KEY = "galaxy.layout";
+const VALUE_KEY = "galaxy.value";
+
+function remembered(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage blocked: the choice just isn't remembered */
+  }
+}
 
 async function fetchLayout(by: LayoutKind): Promise<Float32Array> {
   const l = await fetch(`/api/layout?by=${by}`);
@@ -79,7 +96,9 @@ async function boot(): Promise<void> {
     starThreshold: 0,
     raw: false,
     layout: "writes" as LayoutKind,
+    value: "post" as ValueKind,
   };
+  const preAvailable = Array.isArray(manifest.pre_scales) && manifest.pre_scales.length === nLayer;
   const available = new Set<LayoutKind>(["writes"]);
   let morphT = 1; // 1 = not morphing
 
@@ -233,11 +252,7 @@ async function boot(): Promise<void> {
     layout(kind) {
       if (kind === view.layout || !available.has(kind)) return;
       view.layout = kind;
-      try {
-        localStorage.setItem(LAYOUT_KEY, kind);
-      } catch {
-        /* storage blocked: the choice just isn't remembered */
-      }
+      remember(LAYOUT_KEY, kind);
       galaxy.beginMorph(kind);
       // Raw mode shows only data-driven pixels, so jump instead of animating.
       morphT = view.raw ? 1 : 0;
@@ -245,22 +260,29 @@ async function boot(): Promise<void> {
       ui.setLayout(kind, available);
       dirty = true;
     },
+    value(kind) {
+      if (kind === "pre" && !preAvailable) return;
+      view.value = kind;
+      remember(VALUE_KEY, kind);
+      galaxy.setValue(kind);
+      ui.setValue(kind, preAvailable);
+      dirty = true;
+    },
     reconnect: () => socket.connect(),
   });
   ui.setLayout(view.layout, available);
+  if (preAvailable && remembered(VALUE_KEY) === "pre") {
+    view.value = "pre";
+    galaxy.setValue("pre");
+  }
+  ui.setValue(view.value, preAvailable);
 
   // The "reads" map is optional (older precomputes lack it), so load it after first paint.
   void fetchLayout("reads")
     .then((reads) => {
       galaxy.addLayout("reads", reads);
       available.add("reads");
-      let saved: string | null = null;
-      try {
-        saved = localStorage.getItem(LAYOUT_KEY);
-      } catch {
-        /* ignore */
-      }
-      if (saved === "reads") {
+      if (remembered(LAYOUT_KEY) === "reads") {
         view.layout = "reads";
         galaxy.beginMorph("reads");
         galaxy.morph(1);
@@ -280,7 +302,7 @@ async function boot(): Promise<void> {
   function apply(): void {
     const frame = player.frame;
     if (frame !== shown) {
-      galaxy.setActivations(frame ? frame.mlp : null);
+      galaxy.setActivations(frame ? frame.mlp : null, frame ? frame.pre : null);
       tokens.setCurrent(frame ? frame.h.pos : -1);
       shown = frame;
     }
@@ -312,6 +334,7 @@ async function boot(): Promise<void> {
   }
 
   // ---- Hover -------------------------------------------------------------
+
   function describe(hit: Hit): void {
     const frame = player.frame;
     const tokText = (i: number) => `#${i + 1} “${showToken(player.frames[i]?.h.token ?? "")}”`;
@@ -322,11 +345,14 @@ async function boot(): Promise<void> {
       ];
       if (frame) {
         const act = galaxy.activation(hit.layer, hit.neuron);
-        const scale = manifest.scales[hit.layer];
+        const pre = galaxy.preActivation(hit.layer, hit.neuron);
+        const shownValue = view.value === "pre" ? pre : act;
+        const scale = galaxy.scales()[hit.layer];
         rows.push(
-          { label: "Activation", value: act.toFixed(4) },
-          { label: "Layer scale (p99)", value: scale.toFixed(3) },
-          { label: "Brightness", value: `${(Math.abs(act) / scale).toFixed(2)}×` },
+          { label: "Score (before GELU)", value: pre.toFixed(3) },
+          { label: "Output (after GELU)", value: act.toFixed(4) },
+          { label: `Layer scale (p99, ${view.value === "pre" ? "score" : "output"})`, value: scale.toFixed(3) },
+          { label: "Brightness", value: `${(Math.abs(shownValue) / scale).toFixed(2)}×` },
           { label: "Token", value: tokText(frame.h.pos) },
         );
       } else {

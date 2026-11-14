@@ -24,6 +24,8 @@ export interface Frame {
   h: FrameHeader;
   /** n_layer * d_mlp post-GELU activations, layer-major. */
   mlp: Float32Array;
+  /** n_layer * d_mlp pre-GELU scores, layer-major. Can be strongly negative. */
+  pre: Float32Array;
   /** n_layer * n_head * seq_len attention weights from this token. */
   attn: Float32Array;
 }
@@ -36,6 +38,8 @@ export interface Manifest {
   d_mlp: number;
   scales: number[];
   scale_rule: string;
+  /** p99 of |pre-GELU score| per layer; absent in older precomputes. */
+  pre_scales?: number[];
   layout_rule: string;
   /** Present when precompute wrote both star maps. */
   layouts?: Record<string, { file: string; rule: string }>;
@@ -68,10 +72,12 @@ export function decodeFrame(buf: ArrayBuffer): Frame {
   off += (4 - (off % 4)) % 4;
   const nMlp = h.n_layer * h.d_mlp;
   const nAttn = h.n_layer * h.n_head * h.seq_len;
-  if (off + (nMlp + nAttn) * 2 !== buf.byteLength) throw new Error("Malformed frame");
+  if (h.v !== 2) throw new Error(`Frame version ${h.v} is not supported; rebuild the UI`);
+  if (off + (2 * nMlp + nAttn) * 2 !== buf.byteLength) throw new Error("Malformed frame");
   const mlp = halfToFloat32(new Uint16Array(buf, off, nMlp));
-  const attn = halfToFloat32(new Uint16Array(buf, off + nMlp * 2, nAttn));
-  return { h, mlp, attn };
+  const pre = halfToFloat32(new Uint16Array(buf, off + nMlp * 2, nMlp));
+  const attn = halfToFloat32(new Uint16Array(buf, off + nMlp * 4, nAttn));
+  return { h, mlp, pre, attn };
 }
 
 /** Printable form of a token: makes leading spaces and newlines visible. */
