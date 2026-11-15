@@ -73,3 +73,9 @@ frontend/src/     main.ts run.ts socket.ts protocol.ts scene/ ui/
 - Values travel as float16 (about 3 significant digits).
 - GPT-2's first token position has a much larger residual norm than the rest,
   so it is excluded from the ring scale and its bars are drawn clipped.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). You're also welcome to use screenshots and
+recordings of the app in talks, posts and company material.
+GPT-2 small's weights are released by OpenAI under the MIT license as well.
